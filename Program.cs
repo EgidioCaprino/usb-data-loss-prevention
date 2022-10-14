@@ -9,6 +9,10 @@ eventService.OnLogicalDisk((object sender, EventArrivedEventArgs arguments) => {
   Console.WriteLine("Device ID: {0}", disk.GetDeviceID());
   Boolean readOnly = diskService.IsReadOnly(disk);
   Console.WriteLine("Read only: {0}", readOnly);
+  if (!readOnly) {
+    diskService.SetReadOnly(disk, true);
+    Console.WriteLine("Read only: {0}", diskService.IsReadOnly(disk));
+  }
 });
 
 for (;;);

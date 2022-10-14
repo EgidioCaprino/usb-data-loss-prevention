@@ -5,6 +5,7 @@ using System.Text.RegularExpressions;
 
 public class Disk {
   private static Regex volumeLetterRegex = new Regex("([A-Z]):");
+
   private ManagementBaseObject baseObject;
   private String deviceID;
 
@@ -35,20 +36,37 @@ public class Disk {
 }
 
 public class DiskService {
-  private static Regex readOnlyOutputRegex = new Regex("Current Read-only State : ([A-Z][a-z]{1,2})");
+  private static Regex selectedVolumeRegex = new Regex("Volume [0-9]+ is the selected volume");
+  private static Regex readOnlyStateRegex = new Regex("Current Read-only State : ([A-Z][a-z]{1,2})");
+  private static Regex attributesClearedRegex = new Regex("Disk attributes cleared successfully");
+  private static Regex attributesSetRegex = new Regex("Disk attributes set successfully");
+
   public Boolean IsReadOnly(Disk disk) {
     Process process = startDiskPart();
     try {
-      process.StandardInput.WriteLine("select volume " + disk.GetDeviceID());
-      String output = execute(process, "attributes disk", readOnlyOutputRegex);
-      Match match = readOnlyOutputRegex.Match(output);
+      selectVolume(process, disk.GetDeviceID());
+      String output = execute(process, "attributes disk", readOnlyStateRegex);
+      Match match = readOnlyStateRegex.Match(output);
       String answer = match.Groups[1].Value;
       if ("Yes".Equals(answer)) {
         return true;
       } else if ("No".Equals(answer)) {
         return false;
       } else {
-        throw new Exception("Invalid output: " + output);
+        throw new Exception($"Invalid output: {output}");
+      }
+    } finally {
+      exitDiskPart(process);
+    }
+  }
+
+  public void SetReadOnly(Disk disk, Boolean readOnly) {
+    Process process = startDiskPart();
+    try {
+      selectVolume(process, disk.GetDeviceID());
+      execute(process, "attributes disk clear readonly", attributesClearedRegex);
+      if (readOnly) {
+        execute(process, "attributes disk set readonly", attributesSetRegex);
       }
     } finally {
       exitDiskPart(process);
@@ -74,7 +92,12 @@ public class DiskService {
     process.WaitForExit();
   }
 
+  private void selectVolume(Process process, String volumeLetter) {
+    execute(process, $"select volume {volumeLetter}", selectedVolumeRegex);
+  }
+
   private String execute(Process process, String command, Regex target) {
+    Console.WriteLine($"Executing diskpart command: {command}");
     StringBuilder outputBuilder = new StringBuilder();
     Boolean matches = false;
     process.OutputDataReceived += (object sender, DataReceivedEventArgs arguments) => {
@@ -89,11 +112,14 @@ public class DiskService {
       DateTime startTime = DateTime.Now;
       while (!matches) {
         if (DateTime.Now.Subtract(startTime).TotalMinutes > 1) {
+          Console.WriteLine($"Output: {outputBuilder.ToString()}");
           throw new Exception($"diskpart command \"{command}\" is pending for more than one minute");
         }
         Thread.Sleep(100);
       }
-      return outputBuilder.ToString();
+      String output = outputBuilder.ToString();
+      Console.WriteLine($"Output: {output}");
+      return output;
     } finally {
       process.OutputDataReceived += null;
     }
