@@ -4,13 +4,36 @@ using System.Text;
 using System.Text.RegularExpressions;
 
 public class Disk {
-  private static Regex volumeLetterRegex = new Regex("([A-Z]):");
+  private static Regex driveLetterRegex = new Regex("([A-Z]):");
+  private static Regex deviceIDRegex = new Regex("\\{([A-Za-z0-9-]+)\\}");
 
   private ManagementBaseObject baseObject;
+  private String driveLetter;
   private String deviceID;
 
   public Disk(ManagementBaseObject baseObject) {
     this.baseObject = baseObject;
+  }
+
+  public String GetDriveLetter() {
+    if (driveLetter == null) {
+      foreach (var property in baseObject.Properties) {
+        if ("DriveLetter".Equals(property.Name)) {
+          driveLetter = (String) property.Value;
+          break;
+        }
+      }
+      if (driveLetter == null) {
+        throw new Exception("DriveLetter property not found in ManagementBaseObject");
+      }
+      Match match = driveLetterRegex.Match(driveLetter);
+      if (match.Success) {
+        driveLetter = match.Groups[1].Value;
+      } else {
+        Console.WriteLine("Suspected wrong drive letter value: {0}", driveLetter);
+      }
+    }
+    return driveLetter;
   }
 
   public String GetDeviceID() {
@@ -22,9 +45,9 @@ public class Disk {
         }
       }
       if (deviceID == null) {
-        throw new Exception("Device ID property not found in ManagementBaseObject");
+        throw new Exception("DeviceID property not found in ManagementBaseObject");
       }
-      Match match = volumeLetterRegex.Match(deviceID);
+      Match match = deviceIDRegex.Match(deviceID);
       if (match.Success) {
         deviceID = match.Groups[1].Value;
       } else {
@@ -32,6 +55,15 @@ public class Disk {
       }
     }
     return deviceID;
+  }
+
+  public String ToString() {
+    StringBuilder stringBuilder = new StringBuilder();
+    foreach (var property in baseObject.Properties) {
+      stringBuilder.AppendFormat("{0}: {1}", property.Name, property.Value);
+      stringBuilder.AppendLine();
+    }
+    return stringBuilder.ToString();
   }
 }
 
@@ -44,7 +76,7 @@ public class DiskService {
   public Boolean IsReadOnly(Disk disk) {
     Process process = startDiskPart();
     try {
-      selectVolume(process, disk.GetDeviceID());
+      selectVolume(process, disk.GetDriveLetter());
       String output = execute(process, "attributes disk", readOnlyStateRegex);
       Match match = readOnlyStateRegex.Match(output);
       String answer = match.Groups[1].Value;
@@ -63,7 +95,7 @@ public class DiskService {
   public void SetReadOnly(Disk disk, Boolean readOnly) {
     Process process = startDiskPart();
     try {
-      selectVolume(process, disk.GetDeviceID());
+      selectVolume(process, disk.GetDriveLetter());
       execute(process, "attributes disk clear readonly", attributesClearedRegex);
       if (readOnly) {
         execute(process, "attributes disk set readonly", attributesSetRegex);
@@ -80,7 +112,7 @@ public class DiskService {
     process.StartInfo.FileName = @"C:\Windows\System32\diskpart.exe";
     process.StartInfo.RedirectStandardInput = true;
     process.Exited += (object? sender, EventArgs arguments) => {
-      Console.WriteLine("disk part exited");
+      Console.WriteLine("diskpart exited");
     };
     process.Start();
     process.BeginOutputReadLine();
@@ -92,8 +124,8 @@ public class DiskService {
     process.WaitForExit();
   }
 
-  private void selectVolume(Process process, String volumeLetter) {
-    execute(process, $"select volume {volumeLetter}", selectedVolumeRegex);
+  private void selectVolume(Process process, String driveLetter) {
+    execute(process, $"select volume {driveLetter}", selectedVolumeRegex);
   }
 
   private String execute(Process process, String command, Regex target) {
