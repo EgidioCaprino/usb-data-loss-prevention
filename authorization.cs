@@ -17,7 +17,7 @@ public class AuthorizationService {
       }
       logger.Information($"Found {authorizedDevices.Count} authorized devices");
     } else {
-      logger.Error($"File {AUTHORIZATION_FILE} not found: all devices will be authorized");
+      logger.Error($"File {AUTHORIZATION_FILE} not found: all devices will be unauthorized");
     }
   }
 
